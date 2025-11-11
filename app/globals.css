@@ -14,8 +14,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-color-scheme]) {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: transparent;
+    --foreground: transparent;
     color-scheme: dark;
   }
 }
