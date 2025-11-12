@@ -3,6 +3,9 @@ import { ChatKit } from "@openai/chatkit";   // ✅ <- sin /react
 import options from "@/chatkit.config";      // si usas tu options
 // o tus helpers:
 import { getThemeConfig, GREETING, PLACEHOLDER_INPUT } from "@/lib/config";
+import ChatKitPanel from "@/components/ChatKitPanel"; // ✅
+export default function Page() {
+  return <ChatKitPanel />;
 
 export default function Page() {
   return (
