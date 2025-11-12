@@ -7,13 +7,13 @@ export const CREATE_SESSION_ENDPOINT = "/api/create-session";
 
 export const STARTER_PROMPTS: StartScreenPrompt[] = [
   {
-    label: "",
-    prompt: "",
-    icon: "",
+    label: "a",
+    prompt: "a",
+    icon: "a",
   },
 ];
 
-export const PLACEHOLDER_INPUT = "";
+export const PLACEHOLDER_INPUT = "a";
 
 export const GREETING = "Hola, soy el asistente DS1";
 
