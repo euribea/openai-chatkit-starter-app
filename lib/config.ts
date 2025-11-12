@@ -9,30 +9,20 @@ export const STARTER_PROMPTS: StartScreenPrompt[] = [
   {
     label: "Consultar normativa DS-1",
     prompt: "Explícame los límites de contaminación lumínica según la DS-1.",
-    icon: "💡",
   },
   {
     label: "Ensayos fotométricos",
     prompt: "¿Cómo se realiza un ensayo LM-79?",
-    icon: "📊",
   },
 ];
 
 export const PLACEHOLDER_INPUT = "Escribe tu consulta sobre iluminación...";
-
 export const GREETING = "Hola, soy el asistente DS1. ¿En qué puedo ayudarte hoy?";
 
 export const getThemeConfig = (theme: ColorScheme): ThemeOption => ({
   color: {
-    grayscale: {
-      hue: 220,
-      tint: 6,
-      shade: theme === "dark" ? -1 : -4,
-    },
-    accent: {
-      primary: theme === "dark" ? "#f15f19" : "#f15f19", // Naranja Aladdin
-      level: 1,
-    },
+    grayscale: { hue: 220, tint: 6, shade: theme === "dark" ? -1 : -4 },
+    accent: { primary: "#f15f19", level: 1 },
   },
   radius: "pill",
   density: "compact",
