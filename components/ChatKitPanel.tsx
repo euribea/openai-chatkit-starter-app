@@ -13,21 +13,6 @@ import {
 import { ErrorOverlay } from "./ErrorOverlay";
 import type { ColorScheme } from "@/hooks/useColorScheme";
 
-import EmptyScreen from "@/components/EmptyScreen";
-
-export default function Page() {
-  return (
-    <ChatKit
-  theme={getThemeConfig("light")}
-  composer={{ placeholder: PLACEHOLDER_INPUT, attachments: { enabled: false } }}
-  startScreen={{ greeting: GREETING, prompts: STARTER_PROMPTS }}  // o []
-  components={{ EmptyScreen }}
-  className="max-w-[420px] mx-auto p-4"
-/>
-  );
-}
-
-
 export type FactAction = {
   type: "save";
   factId: string;
