@@ -1,18 +1,26 @@
-import { ColorScheme, ThemeOption } from "@openai/chatkit";
+// lib/config.ts
+import { ColorScheme, ThemeOption, StartScreenPrompt } from "@openai/chatkit";
 
+export const WORKFLOW_ID =
+  process.env.NEXT_PUBLIC_CHATKIT_WORKFLOW_ID?.trim() ?? "";
+
+export const CREATE_SESSION_ENDPOINT = "/api/create-session";
+
+// Deja prompts vacío si no los usas, pero EXPORTA el nombre que el panel importa
+export const STARTER_PROMPTS: StartScreenPrompt[] = [];
+
+// Textos (estética)
 export const GREETING = "Bienvenido, que duda tienes hoy?";
 export const PLACEHOLDER_INPUT = "Enviar mensaje a la IA";
-export const WORKFLOW_ID = process.env.NEXT_PUBLIC_CHATKIT_WORKFLOW_ID?.trim() ?? "";
 
-
+// Tema (solo estética)
 export const getThemeConfig = (theme: ColorScheme): ThemeOption => ({
   color: {
-    // fondo blanco y textos en gris oscuro
     background: "#ffffff",
     foreground: "#0f172a",
-    grayscale: { hue: 220, tint: 6, shade: theme === "dark" ? -1 : -4 },
-    accent: { primary: "#0f172a", level: 1 }, // puedes cambiar por tu naranja corporativo
     border: { color: "#e5e7eb" },
+    grayscale: { hue: 220, tint: 6, shade: theme === "dark" ? -1 : -4 },
+    accent: { primary: "#0f172a", level: 1 }, // cambia a #f15f19 si quieres tu naranja
   },
   radius: "pill",
   density: "compact",
