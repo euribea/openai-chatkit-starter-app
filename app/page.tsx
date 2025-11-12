@@ -1,5 +1,5 @@
-import ChatKitPanel from "@/components/ChatKitPanel";
+import App from "./App";
 
-export default function Page() {
-  return <ChatKitPanel />;
+export default function Home() {
+  return <App />;
 }
