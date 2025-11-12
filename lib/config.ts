@@ -2,6 +2,8 @@ import { ColorScheme, ThemeOption } from "@openai/chatkit";
 
 export const GREETING = "Bienvenido, que duda tienes hoy?";
 export const PLACEHOLDER_INPUT = "Enviar mensaje a la IA";
+export const WORKFLOW_ID = process.env.NEXT_PUBLIC_CHATKIT_WORKFLOW_ID?.trim() ?? "";
+
 
 export const getThemeConfig = (theme: ColorScheme): ThemeOption => ({
   color: {
