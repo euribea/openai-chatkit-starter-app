@@ -36,3 +36,36 @@ body {
 main {
   background-color: #ffffff !important;
 }
+/* Contenedor vacío (pantalla de bienvenida) */
+.ck-empty {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 64vh;        /* centra verticalmente */
+  padding: 2rem 1rem;
+  background: #fff;        /* fondo blanco como en la captura */
+  border-radius: 1rem;     /* esquinas redondeadas */
+  box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 20px rgba(16,24,40,.06);
+}
+
+/* título pequeño superior (mismo texto) */
+.ck-empty-top {
+  position: absolute;
+  top: .75rem;
+  left: 1rem;
+  right: 3rem;             /* deja espacio al botón de recargar si lo tienes */
+  font-size: 14px;
+  color: #475569;          /* gris */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* saludo grande centrado */
+.ck-empty-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #0f172a;          /* casi negro */
+  text-align: center;
+}
+
