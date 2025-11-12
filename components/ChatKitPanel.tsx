@@ -18,14 +18,12 @@ import EmptyScreen from "@/components/EmptyScreen";
 export default function Page() {
   return (
     <ChatKit
-      options={{
-        theme: getThemeConfig("light"),
-        composer: { placeholder: PLACEHOLDER_INPUT, attachments: { enabled: false } },
-        startScreen: { greeting: GREETING, prompts: [] },
-      }}
-      components={{ EmptyScreen }}
-      className="max-w-[420px] mx-auto p-4"
-    />
+  theme={getThemeConfig("light")}
+  composer={{ placeholder: PLACEHOLDER_INPUT, attachments: { enabled: false } }}
+  startScreen={{ greeting: GREETING, prompts: STARTER_PROMPTS }}  // o []
+  components={{ EmptyScreen }}
+  className="max-w-[420px] mx-auto p-4"
+/>
   );
 }
 
