@@ -7,15 +7,15 @@ export const CREATE_SESSION_ENDPOINT = "/api/create-session";
 
 export const STARTER_PROMPTS: StartScreenPrompt[] = [
   {
-    label: "What can you do?",
-    prompt: "What can you do?",
+    label: "¿Qué es la contaminación lumínica?",
+    prompt: "¿Qué es la contaminación lumínica?",
     icon: "circle-question",
   },
 ];
 
-export const PLACEHOLDER_INPUT = "Ask anything...";
+export const PLACEHOLDER_INPUT = "Escribe aqui tu pregunta";
 
-export const GREETING = "How can I help you today?";
+export const GREETING = "Hola, necesitas ayuda con el DS1:2022";
 
 export const getThemeConfig = (theme: ColorScheme): ThemeOption => ({
   color: {
