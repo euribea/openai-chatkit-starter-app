@@ -347,7 +347,7 @@ export function ChatKitPanel({
     });
   }
 
-  return (
+   return (
     <div className="relative pb-8 flex h-[90vh] w-full rounded-2xl flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
       <ChatKit
         key={widgetInstanceKey}
@@ -355,4 +355,19 @@ export function ChatKitPanel({
         className={
           blockingError || isInitializingSession
             ? "pointer-events-none opacity-0"
-            : "block h-fu
+            : "block h-full w-full"
+        }
+      />
+      <ErrorOverlay
+        error={blockingError}
+        fallbackMessage={
+          blockingError || !isInitializingSession
+            ? null
+            : "Loading assistant session..."
+        }
+        onRetry={blockingError && errors.retryable ? handleResetChat : null}
+        retryLabel="Restart chat"
+      />
+    </div>
+  );
+}
