@@ -15,6 +15,7 @@ interface CreateSessionRequestBody {
 
 const DEFAULT_CHATKIT_BASE = "https://api.openai.com";
 const SESSION_COOKIE_NAME = "chatkit_session_id";
+const CLIENT_SECRET_COOKIE_NAME = "chatkit_client_secret"; // NEW
 const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 export async function POST(request: Request): Promise<Response> {
@@ -22,33 +23,40 @@ export async function POST(request: Request): Promise<Response> {
     return methodNotAllowedResponse();
   }
   let sessionCookie: string | null = null;
+  let clientSecretCookie: string | null = null; // NEW
+
   try {
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
       return new Response(
-        JSON.stringify({
-          error: "Missing OPENAI_API_KEY environment variable",
-        }),
-        {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        }
+        JSON.stringify({ error: "Missing OPENAI_API_KEY environment variable" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
-    const { userId, sessionCookie: resolvedSessionCookie } =
-      await resolveUserId(request);
+
+    // 1) Resolver userId (persistente)
+    const { userId, sessionCookie: resolvedSessionCookie } = await resolveUserId(request);
     sessionCookie = resolvedSessionCookie;
+
+    // 2) Reutilizar client_secret si ya existe (mantiene el hilo)  // NEW
+    const existingClientSecret = getCookieValue(
+      request.headers.get("cookie"),
+      CLIENT_SECRET_COOKIE_NAME
+    );
+    if (existingClientSecret) {
+      // Opcional: podrías validar expiración si la guardaras aparte
+      return buildJsonResponse(
+        { client_secret: existingClientSecret, reused: true },
+        200,
+        { "Content-Type": "application/json" },
+        sessionCookie
+      );
+    }
+
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
-
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[create-session] handling request", {
-        resolvedWorkflowId,
-        body: JSON.stringify(parsedBody),
-      });
-    }
 
     if (!resolvedWorkflowId) {
       return buildJsonResponse(
@@ -61,6 +69,8 @@ export async function POST(request: Request): Promise<Response> {
 
     const apiBase = process.env.CHATKIT_API_BASE ?? DEFAULT_CHATKIT_BASE;
     const url = `${apiBase}/v1/chatkit/sessions`;
+
+    // 3) Crear sesión SOLO si no hay client_secret previo              // NEW
     const upstreamResponse = await fetch(url, {
       method: "POST",
       headers: {
@@ -70,22 +80,17 @@ export async function POST(request: Request): Promise<Response> {
       },
       body: JSON.stringify({
         workflow: { id: resolvedWorkflowId },
+        // Usa un userId estable; esto ayuda a identificar al usuario
         user: userId,
+        // Si quieres, puedes pasar también 'scope' como parte del cuerpo:
+        // scope: { user_id: userId }, // opcional
         chatkit_configuration: {
           file_upload: {
-            enabled:
-              parsedBody?.chatkit_configuration?.file_upload?.enabled ?? false,
+            enabled: parsedBody?.chatkit_configuration?.file_upload?.enabled ?? false,
           },
         },
       }),
     });
-
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[create-session] upstream response", {
-        status: upstreamResponse.status,
-        statusText: upstreamResponse.statusText,
-      });
-    }
 
     const upstreamJson = (await upstreamResponse.json().catch(() => ({}))) as
       | Record<string, unknown>
@@ -93,16 +98,10 @@ export async function POST(request: Request): Promise<Response> {
 
     if (!upstreamResponse.ok) {
       const upstreamError = extractUpstreamError(upstreamJson);
-      console.error("OpenAI ChatKit session creation failed", {
-        status: upstreamResponse.status,
-        statusText: upstreamResponse.statusText,
-        body: upstreamJson,
-      });
       return buildJsonResponse(
         {
           error:
-            upstreamError ??
-            `Failed to create session: ${upstreamResponse.statusText}`,
+            upstreamError ?? `Failed to create session: ${upstreamResponse.statusText}`,
           details: upstreamJson,
         },
         upstreamResponse.status,
@@ -111,26 +110,31 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const clientSecret = upstreamJson?.client_secret ?? null;
+    const clientSecret = (upstreamJson?.client_secret as string) ?? null;
     const expiresAfter = upstreamJson?.expires_after ?? null;
-    const responsePayload = {
-      client_secret: clientSecret,
-      expires_after: expiresAfter,
-    };
+
+    // 4) Guardar cookie con el client_secret (para reutilizar)        // NEW
+    clientSecretCookie = clientSecret
+      ? serializeClientSecretCookie(clientSecret)
+      : null;
 
     return buildJsonResponse(
-      responsePayload,
+      {
+        client_secret: clientSecret,
+        expires_after: expiresAfter,
+        reused: false, // NEW (informativo)
+      },
       200,
       { "Content-Type": "application/json" },
-      sessionCookie
+      // Pasa ambas cookies si corresponden
+      mergeSetCookieHeaders(sessionCookie, clientSecretCookie) // NEW
     );
   } catch (error) {
-    console.error("Create session error", error);
     return buildJsonResponse(
       { error: "Unexpected error" },
       500,
       { "Content-Type": "application/json" },
-      sessionCookie
+      mergeSetCookieHeaders(sessionCookie, clientSecretCookie) // NEW
     );
   }
 }
@@ -150,14 +154,10 @@ async function resolveUserId(request: Request): Promise<{
   userId: string;
   sessionCookie: string | null;
 }> {
-  const existing = getCookieValue(
-    request.headers.get("cookie"),
-    SESSION_COOKIE_NAME
-  );
+  const existing = getCookieValue(request.headers.get("cookie"), SESSION_COOKIE_NAME);
   if (existing) {
     return { userId: existing, sessionCookie: null };
   }
-
   const generated =
     typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
@@ -169,23 +169,13 @@ async function resolveUserId(request: Request): Promise<{
   };
 }
 
-function getCookieValue(
-  cookieHeader: string | null,
-  name: string
-): string | null {
-  if (!cookieHeader) {
-    return null;
-  }
-
+function getCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) return null;
   const cookies = cookieHeader.split(";");
   for (const cookie of cookies) {
     const [rawName, ...rest] = cookie.split("=");
-    if (!rawName || rest.length === 0) {
-      continue;
-    }
-    if (rawName.trim() === name) {
-      return rest.join("=").trim();
-    }
+    if (!rawName || rest.length === 0) continue;
+    if (rawName.trim() === name) return rest.join("=").trim();
   }
   return null;
 }
@@ -198,86 +188,83 @@ function serializeSessionCookie(value: string): string {
     "HttpOnly",
     "SameSite=Lax",
   ];
-
-  if (process.env.NODE_ENV === "production") {
-    attributes.push("Secure");
-  }
+  if (process.env.NODE_ENV === "production") attributes.push("Secure");
   return attributes.join("; ");
+}
+
+// NEW: cookie para el client_secret
+function serializeClientSecretCookie(value: string): string {
+  const attributes = [
+    `${CLIENT_SECRET_COOKIE_NAME}=${encodeURIComponent(value)}`,
+    "Path=/",
+    `Max-Age=${SESSION_COOKIE_MAX_AGE}`,
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (process.env.NODE_ENV === "production") attributes.push("Secure");
+  return attributes.join("; ");
+}
+
+// NEW: util para combinar Set-Cookie (cuando haya 1 o 2 cookies)
+function mergeSetCookieHeaders(
+  sessionCookie: string | null,
+  clientSecretCookie: string | null
+): string | null {
+  if (sessionCookie && clientSecretCookie) {
+    // Cuando devuelvas la Response, agrega ambas con 'append'.
+    // Aquí devolvemos una cadena separada por coma para reutilizar tu buildJsonResponse.
+    return `${sessionCookie}, ${clientSecretCookie}`;
+  }
+  return sessionCookie ?? clientSecretCookie;
 }
 
 function buildJsonResponse(
   payload: unknown,
   status: number,
   headers: Record<string, string>,
-  sessionCookie: string | null
+  setCookieHeader: string | null // UPDATED
 ): Response {
   const responseHeaders = new Headers(headers);
-
-  if (sessionCookie) {
-    responseHeaders.append("Set-Cookie", sessionCookie);
+  if (setCookieHeader) {
+    // Si quieres ser estricto, usa 2x append cuando haya coma:
+    const parts = setCookieHeader.split(", ");
+    for (const p of parts) {
+      responseHeaders.append("Set-Cookie", p);
+    }
   }
-
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: responseHeaders,
-  });
+  return new Response(JSON.stringify(payload), { status, headers: responseHeaders });
 }
 
 async function safeParseJson<T>(req: Request): Promise<T | null> {
   try {
     const text = await req.text();
-    if (!text) {
-      return null;
-    }
+    if (!text) return null;
     return JSON.parse(text) as T;
   } catch {
     return null;
   }
 }
 
-function extractUpstreamError(
-  payload: Record<string, unknown> | undefined
-): string | null {
-  if (!payload) {
-    return null;
-  }
-
+function extractUpstreamError(payload: Record<string, unknown> | undefined): string | null {
+  if (!payload) return null;
   const error = payload.error;
-  if (typeof error === "string") {
-    return error;
-  }
+  if (typeof error === "string") return error;
 
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof (error as { message?: unknown }).message === "string"
-  ) {
-    return (error as { message: string }).message;
+  if (error && typeof error === "object" && "message" in error && typeof (error as any).message === "string") {
+    return (error as any).message;
   }
 
   const details = payload.details;
-  if (typeof details === "string") {
-    return details;
-  }
+  if (typeof details === "string") return details;
 
   if (details && typeof details === "object" && "error" in details) {
-    const nestedError = (details as { error?: unknown }).error;
-    if (typeof nestedError === "string") {
-      return nestedError;
-    }
-    if (
-      nestedError &&
-      typeof nestedError === "object" &&
-      "message" in nestedError &&
-      typeof (nestedError as { message?: unknown }).message === "string"
-    ) {
-      return (nestedError as { message: string }).message;
+    const nestedError = (details as any).error;
+    if (typeof nestedError === "string") return nestedError;
+    if (nestedError && typeof nestedError === "object" && "message" in nestedError && typeof (nestedError as any).message === "string") {
+      return (nestedError as any).message;
     }
   }
 
-  if (typeof payload.message === "string") {
-    return payload.message;
-  }
+  if (typeof payload.message === "string") return payload.message;
   return null;
 }
