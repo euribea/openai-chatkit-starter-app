@@ -310,11 +310,6 @@ function extractUpstreamError(payload: UpstreamJSON | undefined): string | null 
 
   return null;
 }
-
-/** utils locales sin `any` */
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
 function getStringProp(obj: Record<string, unknown>, key: string): string | null {
   const val = obj[key];
   return typeof val === "string" ? val : null;
