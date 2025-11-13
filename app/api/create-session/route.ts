@@ -310,3 +310,48 @@ function extractUpstreamError(payload: UpstreamJSON | undefined): string | null 
 
   return null;
 }
+
+/** utils locales sin `any` */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function getStringProp(obj: Record<string, unknown>, key: string): string | null {
+  const val = obj[key];
+  return typeof val === "string" ? val : null;
+}
+
+/** extrae un mensaje de error útil desde el JSON de la API */
+function extractErrorDetail(
+  payload: Record<string, unknown> | undefined,
+  fallback: string
+): string {
+  if (!payload) return fallback;
+
+  // error como string directo
+  if (typeof payload.error === "string") return payload.error;
+
+  // error como objeto con "message"
+  if (isRecord(payload.error)) {
+    const msg = getStringProp(payload.error, "message");
+    if (msg) return msg;
+  }
+
+  // details como string
+  if (typeof payload.details === "string") return payload.details;
+
+  // details.error (string u objeto con message)
+  if (isRecord(payload.details)) {
+    const nested = (payload.details as Record<string, unknown>)["error"];
+    if (typeof nested === "string") return nested;
+    if (isRecord(nested)) {
+      const msg = getStringProp(nested, "message");
+      if (msg) return msg;
+    }
+  }
+
+  // message suelto
+  if (typeof payload.message === "string") return payload.message;
+
+  return fallback;
+}
+
