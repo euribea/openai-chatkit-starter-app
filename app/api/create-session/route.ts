@@ -15,26 +15,13 @@ interface CreateSessionRequestBody {
 
 const DEFAULT_CHATKIT_BASE = "https://api.openai.com";
 const SESSION_COOKIE_NAME = "chatkit_session_id";
-const CLIENT_SECRET_COOKIE_NAME = "chatkit_client_secret";
 const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
-
-type UpstreamJSON = {
-  client_secret?: string;
-  expires_after?: unknown;
-  error?: unknown;
-  details?: unknown;
-  message?: unknown;
-};
 
 export async function POST(request: Request): Promise<Response> {
   if (request.method !== "POST") {
     return methodNotAllowedResponse();
   }
-
-  // cookies que podríamos setear en la respuesta
   let sessionCookie: string | null = null;
-  let clientSecretCookie: string | null = null;
-
   try {
     const openaiApiKey = process.env.OPENAI_API_KEY;
     if (!openaiApiKey) {
@@ -50,35 +37,25 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const parsedBody = await safeParseJson<CreateSessionRequestBody>(request);
-
-    // 1) userId persistente
     const { userId, sessionCookie: resolvedSessionCookie } =
       await resolveUserId(request);
     sessionCookie = resolvedSessionCookie;
-
-    // 2) si ya tenemos client_secret en cookie, reutilizarlo (mantiene el hilo)
-    const existingClientSecret = getCookieValue(
-      request.headers.get("cookie"),
-      CLIENT_SECRET_COOKIE_NAME
-    );
-    if (existingClientSecret) {
-      return buildJsonResponse(
-        { client_secret: existingClientSecret, reused: true },
-        200,
-        { "Content-Type": "application/json" },
-        collectSetCookies([sessionCookie]) // sólo reenvía la de session si corresponde
-      );
-    }
-
     const resolvedWorkflowId =
       parsedBody?.workflow?.id ?? parsedBody?.workflowId ?? WORKFLOW_ID;
+
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[create-session] handling request", {
+        resolvedWorkflowId,
+        body: JSON.stringify(parsedBody),
+      });
+    }
 
     if (!resolvedWorkflowId) {
       return buildJsonResponse(
         { error: "Missing workflow id" },
         400,
         { "Content-Type": "application/json" },
-        collectSetCookies([sessionCookie])
+        sessionCookie
       );
     }
 
@@ -103,9 +80,16 @@ export async function POST(request: Request): Promise<Response> {
       }),
     });
 
-    const upstreamJson = (await upstreamResponse
-      .json()
-      .catch(() => ({}))) as UpstreamJSON | undefined;
+    if (process.env.NODE_ENV !== "production") {
+      console.info("[create-session] upstream response", {
+        status: upstreamResponse.status,
+        statusText: upstreamResponse.statusText,
+      });
+    }
+
+    const upstreamJson = (await upstreamResponse.json().catch(() => ({}))) as
+      | Record<string, unknown>
+      | undefined;
 
     if (!upstreamResponse.ok) {
       const upstreamError = extractUpstreamError(upstreamJson);
@@ -123,37 +107,30 @@ export async function POST(request: Request): Promise<Response> {
         },
         upstreamResponse.status,
         { "Content-Type": "application/json" },
-        collectSetCookies([sessionCookie])
+        sessionCookie
       );
     }
 
     const clientSecret = upstreamJson?.client_secret ?? null;
     const expiresAfter = upstreamJson?.expires_after ?? null;
-
-    if (clientSecret) {
-      clientSecretCookie = serializeClientSecretCookie(clientSecret);
-    }
-
     const responsePayload = {
       client_secret: clientSecret,
       expires_after: expiresAfter,
-      reused: false,
     };
 
     return buildJsonResponse(
       responsePayload,
       200,
       { "Content-Type": "application/json" },
-      collectSetCookies([sessionCookie, clientSecretCookie])
+      sessionCookie
     );
-  } catch (error: unknown) {
-    // 👇 usar 'error' elimina el warning de variable sin uso
+  } catch (error) {
     console.error("Create session error", error);
     return buildJsonResponse(
       { error: "Unexpected error" },
       500,
       { "Content-Type": "application/json" },
-      collectSetCookies([sessionCookie, clientSecretCookie])
+      sessionCookie
     );
   }
 }
@@ -199,11 +176,16 @@ function getCookieValue(
   if (!cookieHeader) {
     return null;
   }
+
   const cookies = cookieHeader.split(";");
   for (const cookie of cookies) {
     const [rawName, ...rest] = cookie.split("=");
-    if (!rawName || rest.length === 0) continue;
-    if (rawName.trim() === name) return rest.join("=").trim();
+    if (!rawName || rest.length === 0) {
+      continue;
+    }
+    if (rawName.trim() === name) {
+      return rest.join("=").trim();
+    }
   }
   return null;
 }
@@ -216,42 +198,25 @@ function serializeSessionCookie(value: string): string {
     "HttpOnly",
     "SameSite=Lax",
   ];
-  if (process.env.NODE_ENV === "production") attributes.push("Secure");
-  return attributes.join("; ");
-}
 
-function serializeClientSecretCookie(value: string): string {
-  const attributes = [
-    `${CLIENT_SECRET_COOKIE_NAME}=${encodeURIComponent(value)}`,
-    "Path=/",
-    `Max-Age=${SESSION_COOKIE_MAX_AGE}`,
-    "HttpOnly",
-    "SameSite=Lax",
-  ];
-  if (process.env.NODE_ENV === "production") attributes.push("Secure");
+  if (process.env.NODE_ENV === "production") {
+    attributes.push("Secure");
+  }
   return attributes.join("; ");
-}
-
-/**
- * Recoge hasta dos valores de cookie serializados y devuelve un array para Set-Cookie
- */
-function collectSetCookies(parts: Array<string | null>): string[] | null {
-  const valid = parts.filter((p): p is string => Boolean(p));
-  return valid.length ? valid : null;
 }
 
 function buildJsonResponse(
   payload: unknown,
   status: number,
   headers: Record<string, string>,
-  setCookies: string[] | null
+  sessionCookie: string | null
 ): Response {
   const responseHeaders = new Headers(headers);
-  if (setCookies) {
-    for (const c of setCookies) {
-      responseHeaders.append("Set-Cookie", c);
-    }
+
+  if (sessionCookie) {
+    responseHeaders.append("Set-Cookie", sessionCookie);
   }
+
   return new Response(JSON.stringify(payload), {
     status,
     headers: responseHeaders,
@@ -261,88 +226,58 @@ function buildJsonResponse(
 async function safeParseJson<T>(req: Request): Promise<T | null> {
   try {
     const text = await req.text();
-    if (!text) return null;
+    if (!text) {
+      return null;
+    }
     return JSON.parse(text) as T;
   } catch {
     return null;
   }
 }
 
-/** type guards utilitarios */
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-function getStringProp(obj: Record<string, unknown>, key: string): string | null {
-  const val = obj[key];
-  return typeof val === "string" ? val : null;
-}
-
-/**
- * Extrae mensaje de error de la respuesta aguas arriba (sin usar 'any')
- */
-function extractUpstreamError(payload: UpstreamJSON | undefined): string | null {
-  if (!payload) return null;
-
-  // error como string directo
-  if (typeof payload.error === "string") return payload.error;
-
-  // error como objeto con "message"
-  if (isRecord(payload.error)) {
-    const msg = getStringProp(payload.error, "message");
-    if (msg) return msg;
+function extractUpstreamError(
+  payload: Record<string, unknown> | undefined
+): string | null {
+  if (!payload) {
+    return null;
   }
 
-  // details puede ser string
-  if (typeof payload.details === "string") return payload.details;
+  const error = payload.error;
+  if (typeof error === "string") {
+    return error;
+  }
 
-  // details.error anidado
-  if (isRecord(payload.details)) {
-    const nested = payload.details["error"];
-    if (typeof nested === "string") return nested;
-    if (isRecord(nested)) {
-      const msg = getStringProp(nested, "message");
-      if (msg) return msg;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+
+  const details = payload.details;
+  if (typeof details === "string") {
+    return details;
+  }
+
+  if (details && typeof details === "object" && "error" in details) {
+    const nestedError = (details as { error?: unknown }).error;
+    if (typeof nestedError === "string") {
+      return nestedError;
+    }
+    if (
+      nestedError &&
+      typeof nestedError === "object" &&
+      "message" in nestedError &&
+      typeof (nestedError as { message?: unknown }).message === "string"
+    ) {
+      return (nestedError as { message: string }).message;
     }
   }
 
-  // message suelto
-  if (typeof payload.message === "string") return payload.message;
-
+  if (typeof payload.message === "string") {
+    return payload.message;
+  }
   return null;
 }
-
-/** extrae un mensaje de error útil desde el JSON de la API */
-function extractErrorDetail(
-  payload: Record<string, unknown> | undefined,
-  fallback: string
-): string {
-  if (!payload) return fallback;
-
-  // error como string directo
-  if (typeof payload.error === "string") return payload.error;
-
-  // error como objeto con "message"
-  if (isRecord(payload.error)) {
-    const msg = getStringProp(payload.error, "message");
-    if (msg) return msg;
-  }
-
-  // details como string
-  if (typeof payload.details === "string") return payload.details;
-
-  // details.error (string u objeto con message)
-  if (isRecord(payload.details)) {
-    const nested = (payload.details as Record<string, unknown>)["error"];
-    if (typeof nested === "string") return nested;
-    if (isRecord(nested)) {
-      const msg = getStringProp(nested, "message");
-      if (msg) return msg;
-    }
-  }
-
-  // message suelto
-  if (typeof payload.message === "string") return payload.message;
-
-  return fallback;
-}
-
