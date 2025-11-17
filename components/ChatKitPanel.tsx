@@ -190,10 +190,6 @@ export function ChatKitPanel({
           headers: {
             "Content-Type": "application/json",
           },
-          // ⬇️⬇️ CAMBIO CLAVE: mantener cookies para conservar el hilo
-          credentials: "include",
-          // Si tu API está en OTRO dominio/subdominio, descomenta la línea siguiente:
-          // mode: "cors",
           body: JSON.stringify({
             workflow: { id: WORKFLOW_ID },
             chatkit_configuration: {
@@ -236,7 +232,7 @@ export function ChatKitPanel({
           throw new Error(detail);
         }
 
-        const clientSecret = (data?.client_secret as string) ?? undefined;
+        const clientSecret = data?.client_secret as string | undefined;
         if (!clientSecret) {
           throw new Error("Missing client secret in response");
         }
@@ -347,7 +343,7 @@ export function ChatKitPanel({
     });
   }
 
-   return (
+  return (
     <div className="relative pb-8 flex h-[90vh] w-full rounded-2xl flex-col overflow-hidden bg-white shadow-sm transition-colors dark:bg-slate-900">
       <ChatKit
         key={widgetInstanceKey}
@@ -370,4 +366,53 @@ export function ChatKitPanel({
       />
     </div>
   );
+}
+
+function extractErrorDetail(
+  payload: Record<string, unknown> | undefined,
+  fallback: string
+): string {
+  if (!payload) {
+    return fallback;
+  }
+
+  const error = payload.error;
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    return (error as { message: string }).message;
+  }
+
+  const details = payload.details;
+  if (typeof details === "string") {
+    return details;
+  }
+
+  if (details && typeof details === "object" && "error" in details) {
+    const nestedError = (details as { error?: unknown }).error;
+    if (typeof nestedError === "string") {
+      return nestedError;
+    }
+    if (
+      nestedError &&
+      typeof nestedError === "object" &&
+      "message" in nestedError &&
+      typeof (nestedError as { message?: unknown }).message === "string"
+    ) {
+      return (nestedError as { message: string }).message;
+    }
+  }
+
+  if (typeof payload.message === "string") {
+    return payload.message;
+  }
+
+  return fallback;
 }
